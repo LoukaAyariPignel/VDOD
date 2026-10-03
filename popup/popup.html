@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Débrouilleur BRV</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>Débrouilleur BRV</h1>
+  <label class="toggle">
+    <input type="checkbox" id="enabled">
+    <span>Décodage actif</span>
+  </label>
+  <p class="hint">S'applique à toutes les vidéos. La clé est trouvée toute seule grâce au QR code du début.</p>
+
+  <label for="key" class="field">Clé manuelle <small>(seulement si le QR code est illisible)</small></label>
+  <input id="key" type="text" maxlength="16" spellcheck="false" autocomplete="off" placeholder="ex. K7QP2MXE">
+
+  <section id="status">
+    <h2>Vidéo de cet onglet</h2>
+    <dl id="info"><dd>…</dd></dl>
+    <button id="forget" type="button" hidden>Oublier la clé de cette vidéo</button>
+  </section>
+  <script src="../src/browser.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Paquet généré par build.py
+dist/
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node (au cas où)
+node_modules/
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Systèmes
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Divers
+*.log
+.env
+.env.*
+.claude/

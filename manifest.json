@@ -1,0 +1,75 @@
+{
+  "manifest_version": 3,
+  "name": "Débrouilleur BRV",
+  "version": "1.0.0",
+  "description": "Débrouille en direct, dans le lecteur YouTube, les vidéos produites par le Brouilleur (image et son).",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.youtube-nocookie.com/*",
+    "*://*.ytimg.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["src/page-hook.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["src/early.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "lib/jsQR.js",
+        "src/brv-core.js",
+        "src/dsp.js",
+        "src/processor.js",
+        "src/sync.js",
+        "src/refaudio.js",
+        "src/browser.js",
+        "src/video.js",
+        "src/audio.js",
+        "src/preview.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/worklet.js"],
+      "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*", "http://localhost/*", "http://127.0.0.1/*"]
+    }
+  ],
+  "action": {
+    "default_title": "Débrouilleur BRV",
+    "default_popup": "popup/popup.html",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "browser_specific_settings": {
+    "gecko": { "id": "debrouilleur-brv@exemple.fr", "strict_min_version": "128.0" }
+  }
+}
