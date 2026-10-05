@@ -12,6 +12,9 @@
   const doc = root.document;
   const GX = BRV.GRID_X, GY = BRV.GRID_Y, M = BRV.BLOCK_MARGIN;
   const SB = /\/sb\/([\w-]+)\/([^/?"')]+)\/([^/?"')]+)/;      // …/sb/<vidéo>/<niveau>/<planche>
+  // Firefox n'affiche pas une image « blob: » citée par la feuille de style d'une extension
+  // (l'aperçu reste noir) : la planche débrouillée y est donc écrite dans la règle elle-même (« data: »)
+  const FIREFOX = typeof root.cloneInto === "function";
 
   function Previews() {
     this.key = null; this.table = null; this.videoId = null;
@@ -33,7 +36,10 @@
   };
 
   Previews.prototype.reset = function (key, vid) {
-    for (const s of this.sheets.values()) if (s.blobUrl) URL.revokeObjectURL(s.blobUrl);
+    for (const s of this.sheets.values()) {
+      if (s.blobUrl && !FIREFOX) URL.revokeObjectURL(s.blobUrl);
+      if (s.rule) s.rule.remove();
+    }
     this.sheets.clear();
     this.key = key; this.videoId = vid;
     this.table = key ? BRV.decodeTable(key) : null;
@@ -54,12 +60,16 @@
 
   Previews.prototype.writeRules = function () {
     if (!this.style) return;
-    // d'abord : noir tant que la planche n'est pas débrouillée ; ensuite, une règle par planche prête
-    let css = this.selector("") + " { background-image: none !important; background-color: #000 !important; }\n";
-    for (const [path, s] of this.sheets) {
-      if (s.blobUrl) css += this.selector(path) + " { background-image: url(\"" + s.blobUrl + "\") !important; }\n";
-    }
-    this.style.textContent = css;
+    // noir tant que la planche n'est pas débrouillée ; chaque planche prête ajoute ensuite sa règle
+    this.style.textContent = this.selector("") + " { background-image: none !important; background-color: #000 !important; }\n";
+  };
+
+  // règle d'une planche prête, dans sa propre feuille (placée après la règle « noir », elle l'emporte)
+  Previews.prototype.addRule = function (path, sheet) {
+    sheet.rule = doc.createElement("style");
+    sheet.rule.className = "brv-previews";
+    sheet.rule.textContent = this.selector(path) + " { background-image: url(\"" + sheet.blobUrl + "\") !important; }\n";
+    (doc.head || doc.documentElement).appendChild(sheet.rule);
   };
 
   Previews.prototype.observe = function (player) {
@@ -112,12 +122,12 @@
       const src = ctx.getImageData(0, 0, W, H), out = ctx.createImageData(W, H);
       unscrambleSheet(src.data, out.data, W, H, sheet.grid[0], sheet.grid[1], this.table);
       ctx.putImageData(out, 0, 0);
-      const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+      const blob = FIREFOX ? null : await new Promise((res) => cv.toBlob(res, "image/png"));
       if (key !== this.key || this.sheets.get(path) !== sheet) return;
-      sheet.blobUrl = URL.createObjectURL(blob);
+      sheet.blobUrl = FIREFOX ? cv.toDataURL("image/jpeg", 0.92) : URL.createObjectURL(blob);
       sheet.state = "prête";
       this.decoded++;
-      this.writeRules();
+      this.addRule(path, sheet);
     } catch (e) {
       sheet.state = "échec : " + e.message;
     }

@@ -470,7 +470,9 @@
         tr.offsetUs = (+m.offset || 0) * 1e6;
         if (m.offset) this.counts.offset = +m.offset;
         if (m.mode === "sequence") this.counts.sequence = true;
-        try { tr.parser.push(new Uint8Array(m.bytes)); }
+        // copie dans un tableau de l'extension : sous Firefox, les octets venus de la page ne
+        // peuvent pas être découpés tels quels (« Permission denied to access property "constructor" »)
+        try { const src = new Uint8Array(m.bytes), own = new Uint8Array(src.length); own.set(src); tr.parser.push(own); }
         catch (err) { this.counts.errors++; this.status = "lecture du flux : " + err.message; tr.parser.reset(); }
       } else if (m.kind === "abort") {
         const tr = this.tracks.get(m.id);
@@ -487,7 +489,7 @@
     } else {
       root.addEventListener("message", (e) => {
         const m = e.data && e.data.__brv;
-        if (m && e.source === root) handle(m);
+        if (m && (e.source === root || e.source === root.window)) handle(m);
       }, true);
     }
   }
