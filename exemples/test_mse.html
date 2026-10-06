@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Test MSE du Débrouilleur BRV</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 14px system-ui, sans-serif; }
+  header { padding: 10px 16px; }
+  .player { position: relative; width: min(100vw, 1280px); aspect-ratio: 16 / 9; margin: 0 auto; background: #000; }
+  .player video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<header>Lecture comme YouTube : image et son séparés, chargés par morceaux (Media Source Extensions).
+  Son : <span id="kind"></span> — <span id="state">chargement…</span></header>
+<div class="player html5-video-player"><video id="v" controls playsinline></video>
+  <!-- ?apercu=1 : aperçus de la barre de lecture, comme YouTube (planches d'images dans sb/) -->
+  <div id="apercus" hidden style="position:absolute; left:8px; top:8px; z-index:5">
+    <div class="ytp-tooltip-bg" style="width:243px; height:136px; background: url(&quot;/sb/TEST/storyboard3_L3/M0.jpg?sqp=x&quot;) -243px -136px / 729px 408px;"></div>
+    <div class="ytp-fine-scrubbing-thumbnail" style="margin-top:8px; width:800px; height:90px; background: url(&quot;/sb/TEST/storyboard3_L2/M0.jpg?sqp=y&quot;) 0px -90px / 800px 450px;"></div>
+  </div>
+</div>
+<script>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("apercu") === "1") document.getElementById("apercus").hidden = false;
+  const audioFile = q.get("audio") || "mse_audio.webm";
+  const audioMime = audioFile.endsWith(".webm") ? 'audio/webm; codecs="opus"' : 'audio/mp4; codecs="mp4a.40.2"';
+  const videoFile = q.get("video") || "mse_video.mp4";
+  const videoMime = 'video/mp4; codecs="avc1.640028"';
+  document.getElementById("kind").textContent = audioMime;
+  const v = document.getElementById("v");
+  const load = async () => {
+    const ms = new MediaSource();
+    v.src = URL.createObjectURL(ms);
+    await new Promise((r) => ms.addEventListener("sourceopen", r, { once: true }));
+    // ?live=1 : comme YouTube, on ne charge que quelques secondes d'avance, au fil de la lecture
+    const live = q.get("live") === "1", STEP = live ? 32 * 1024 : 256 * 1024;
+    const stallAt = +(q.get("stall") || 0), stalled = new Set();
+    const refuse = q.get("refus") === "1";
+    const feed = async (file, mime) => {
+      const sb = ms.addSourceBuffer(mime);
+      // ?tso=-5 : décalage appliqué par le navigateur aux horodatages du son (raccord, comme YouTube)
+      if (/^audio/.test(mime) && q.get("tso")) sb.timestampOffset = +q.get("tso");
+      const data = new Uint8Array(await (await fetch(file)).arrayBuffer());
+      for (let off = 0; off < data.length; off += STEP) {             // par morceaux, comme un lecteur
+        while (live && sb.buffered.length && sb.buffered.end(sb.buffered.length - 1) > v.currentTime + 6) {
+          if (ms !== current) return;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        if (ms !== current) return;
+        if (stallAt && !stalled.has(mime) && v.currentTime > stallAt) {   // ?stall=8 : chargement interrompu 9 s
+          stalled.add(mime); await new Promise((r) => setTimeout(r, 9000));
+        }
+        const piece = data.subarray(off, Math.min(data.length, off + STEP));
+        sb.appendBuffer(piece);
+        // ?refus=1 : de temps en temps, un envoi refusé par le navigateur (tampon occupé), renvoyé ensuite
+        if (refuse && (off / STEP) % 7 === 3) { try { sb.appendBuffer(piece); } catch (e) { refused++; } }
+        await new Promise((r) => sb.addEventListener("updateend", r, { once: true }));
+      }
+    };
+    current = ms;
+    const all = Promise.all([feed(videoFile, videoMime), feed(audioFile, audioMime)]).then(() => { if (ms === current) ms.endOfStream(); });
+    if (!live) await all;
+    else await new Promise((r) => setTimeout(r, 1500));
+  };
+  let current = null, refused = 0;
+  window.refusedCount = () => refused;
+  await load();
+  // « changement de qualité » comme YouTube : nouveau MediaSource, reprise à la même position
+  window.requality = async () => {
+    const t = v.currentTime, playing = !v.paused;
+    document.getElementById("state").textContent = "changement de qualité…";
+    await load();
+    v.currentTime = t;
+    if (playing) await v.play();
+    document.getElementById("state").textContent = "prêt";
+  };
+  document.getElementById("state").textContent = "prêt";
+  // ?intrus=1 : une seconde vidéo muette et petite (comme un aperçu au survol), avec son propre
+  // flux de son chargé par petits morceaux pendant toute la lecture de la vidéo principale
+  if (q.get("intrus") === "1") {
+    const v2 = document.createElement("video");
+    v2.muted = true; v2.style.cssText = "position:fixed; right:0; bottom:0; width:120px; height:68px";
+    document.body.appendChild(v2);
+    const ms2 = new MediaSource();
+    v2.src = URL.createObjectURL(ms2);
+    await new Promise((r) => ms2.addEventListener("sourceopen", r, { once: true }));
+    const sb2 = ms2.addSourceBuffer('audio/webm; codecs="opus"');
+    const d2 = new Uint8Array(await (await fetch("mse_audio.webm")).arrayBuffer());
+    for (let off = 0; off < d2.length; off += 16384) {
+      sb2.appendBuffer(d2.subarray(off, off + 16384));
+      await new Promise((r) => sb2.addEventListener("updateend", r, { once: true }));
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+})();
+</script>
+</body>
+</html>

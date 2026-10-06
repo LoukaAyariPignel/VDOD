@@ -119,7 +119,7 @@
     // on se met à l'écoute dès le début de l'événement, avec la position qui correspondra.
     // position du compteur d'échantillons au dernier saut : une reprise du son détectée avant
     // appartient à l'ancienne position et ne doit pas servir de repère
-    ev("seeking", () => { this.seekMark = this.lastCount; this.pauseMap = null; this.unlock("saut"); this.arm(video.currentTime); });
+    ev("seeking", () => { this.seekMark = this.lastCount; this.seekTo = video.currentTime; this.pauseMap = null; this.unlock("saut"); this.arm(video.currentTime); });
     // pause ou attente : le son reprendra exactement là où il s'arrête ; on garde le calage en cours
     // (mode « joué ») pour en déduire la position à la reprise
     const holdLock = () => { const l = this.lockedAt; this.pauseMap = l && !l.ref ? { base: l.i0 - l.p0, at: this.lastCount } : null; };
@@ -401,7 +401,20 @@
     const token = this.refToken = (this.refToken || 0) + 1;
     await new Promise((r) => setTimeout(r, 300));            // 0,3 s de son joué
     if (token !== this.refToken || !this.useRef() || this.video.paused) { this.note("calage abandonné (" + (token !== this.refToken ? "remplacé" : this.video.paused ? "pause" : "référence") + ")"); return true; }
-    const n = 12288;
+    if (await this.beepLockRef()) {
+      if (token !== this.refToken) return true;
+      this.refTries = 0;
+      clearTimeout(this.refTimer);
+      this.refTimer = setTimeout(() => this.refCheck(), 5000);
+      return true;
+    }
+    if (token !== this.refToken) return true;
+    // extrait plus long à chaque échec (un passage calme se reconnaît sur 1 – 2 s, pas sur 0,26 s),
+    // sans remonter avant la reprise du son
+    const tries = this.refTries || 0, span = [0.35, 0.35, 1.5, 1.5, 4, 4][tries % 6];
+    const since = this.lastResumeMark !== undefined && this.lastCount !== undefined ? this.lastCount - this.lastResumeMark - 4800 : Infinity;
+    let n = 12288;
+    while (n < (span > 2 ? 49152 : 98304) && n * 2 <= since && n < 12288 << Math.min(tries, 3)) n *= 2;
     let snap = await this.snapshot(null, n);
     for (let t = 0; t < 20 && snap.data.length < n && token === this.refToken; t++) {   // pas encore assez de son
       await new Promise((r) => setTimeout(r, 150));
@@ -413,7 +426,6 @@
     const guess = this.video.currentTime - n / RATE - 0.05;
     // recherche près de la position de la vidéo, puis de plus en plus large si les essais échouent
     // (son joué décalé par rapport à l'image : sortie audio lente, casque Bluetooth…)
-    const tries = this.refTries || 0, span = tries < 2 ? 0.35 : tries < 4 ? 1.5 : 4;
     const r = this.ref.locate(snap.data, guess, span);
     if (r && r.quality >= 0.8 && Math.abs(r.t - guess) > 0.3) {
       this.note("son joué trouvé à " + (r.t - guess >= 0 ? "+" : "") + (r.t - guess).toFixed(2) + " s de la position attendue (ressemblance " + r.quality.toFixed(2) + ")");
@@ -423,9 +435,15 @@
       this.refTries = (this.refTries || 0) + 1;
       const ch = this.ref.chunks, near = ch.filter((c) => c.end > guess - 1 && c.t < guess + 1).length;
       this.note("calage par la référence impossible" + (r ? " (ressemblance " + r.quality.toFixed(2) + ", recherche ±" + span + " s)" : " (référence absente ici)") +
-                " [vers " + guess.toFixed(2) + " s ; référence " + (ch.length ? ch[0].t.toFixed(1) + "–" + ch[ch.length - 1].end.toFixed(1) + " s, " + near + " morceaux proches" : "vide") + "]" +
-                (this.refTries <= 6 ? ", nouvel essai" : ""));
-      if (this.refTries <= 6) { setTimeout(() => { if (token === this.refToken) this.refLock(why); }, 400); return true; }
+                " [vers " + guess.toFixed(2) + " s ; extrait " + (n / RATE).toFixed(2) + " s ; référence " + (ch.length ? ch[0].t.toFixed(1) + "–" + ch[ch.length - 1].end.toFixed(1) + " s, " + near + " morceaux proches" : "vide") + "]" +
+                (this.refTries <= 6 || r ? ", nouvel essai" : ""));
+      // référence présente mais son trop calme ou ambigu : on réessaie sans fin, avec des extraits
+      // plus longs (le son finit par devenir reconnaissable) ; sauter ailleurs n'aiderait pas
+      if (this.refTries <= 6 || r) {
+        if (this.refTries > 6) this.status = "calage du son… (passage trop calme, nouvel essai)";
+        setTimeout(() => { if (token === this.refToken) this.refLock(why); }, this.refTries <= 6 ? 400 : 1000);
+        return true;
+      }
       this.refTries = 0;
       return false;
     }
@@ -453,6 +471,33 @@
     return true;
   };
 
+  // Lecture partie du début : le bip de repère (fort, quel que soit le son de la vidéo) donne la
+  // position exacte. La comparaison avec la référence échoue, elle, sur un début très calme :
+  // 0,3 s après le départ, le bip est déjà sorti de l'extrait comparé.
+  AudioLink.prototype.beepLockRef = async function () {
+    const v = this.video;
+    // pas après un saut ailleurs qu'au début (un saut au milieu du bip n'en joue qu'une partie)
+    if (v.currentTime > 3 || (this.seekTo !== undefined && this.seekTo > 0.005)) return false;
+    const T = v.currentTime;
+    const len = Math.min(this.lastCount || 0, Math.round((T + 0.8) * RATE) + 2400);
+    if (len < 4800) return false;
+    const snap = await this.snapshot(null, len);
+    const end = snap.from + snap.data.length;
+    // le bip a été joué vers end − T (plus le retard de la sortie du son) : recherche à ± 0,6 s
+    const expect = snap.data.length - Math.round(T * RATE);
+    const a = Math.max(0, expect - 28800), b = Math.min(snap.data.length, expect + 28800 + 2400);
+    if (b - a < 4800) return false;
+    const bp = findBeep(snap.data.subarray(a, b), 0.85);
+    if (!bp) return false;
+    const beepAt = snap.from + a + bp.pos;
+    if (this.seekMark !== undefined && beepAt < this.seekMark) return false;   // joué avant le dernier saut
+    const p0 = end - beepAt;
+    if (Math.abs(p0 / RATE - T) > 0.6) return false;      // pause ou attente depuis : compteur décalé
+    if (await this.refDelay() === null || this.video.paused) return false;
+    this.doLockRef(end, p0, "bip de repère (qualité " + bp.quality.toFixed(3) + ")");
+    return true;
+  };
+
   // contrôle périodique : le son joué est-il toujours là où on le croit ?
   AudioLink.prototype.refCheck = async function () {
     try { await this.refCheckInner(); } catch (e) { this.note("erreur de contrôle : " + e.message); }
@@ -464,6 +509,10 @@
     const n = 8192;
     const snap = await this.snapshot(null, n);
     if (this.lockedAt !== lock || snap.data.length < n) return;
+    const again = () => { this.refTimer = setTimeout(() => this.refCheck(), 5000); };
+    // passage très calme : on garde le calage (rien à comparer de façon fiable)
+    let e = 0; for (let i = 0; i < n; i++) e += snap.data[i] * snap.data[i];
+    if (e / n < 1e-8) { again(); return; }
     const c = await this.refDelay();
     if (c === null) return;
     const pExpected = snap.from - lock.i0 + lock.p0;          // position publiée supposée
@@ -481,10 +530,11 @@
       }
     } else if ((here === null || here < 0.5) && (!r || r.quality < 0.5)) {
       this.note("contrôle : son joué introuvable autour de la position attendue, recalage");
-      this.refLock("contrôle");
+      // le calage actuel reste en place tant qu'un meilleur n'est pas trouvé ; le contrôle continue
+      this.refLock("contrôle").then(() => { if (this.lockedAt === lock) again(); });
       return;
     }
-    this.refTimer = setTimeout(() => this.refCheck(), 5000);
+    again();
   };
 
   AudioLink.prototype.snapshot = function (from, len) {

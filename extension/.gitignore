@@ -1,12 +1,15 @@
-# Exemples : vidéos et sons trop lourds pour GitHub (1,2 Go), seules les pages de test sont gardées
-exemples/*
-!exemples/*.html
+# Paquet généré par build.py
+dist/
+*.zip
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Node (au cas où)
+node_modules/
 
 # Éditeurs
 .vscode/
