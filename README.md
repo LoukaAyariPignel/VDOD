@@ -1,4 +1,10 @@
-# Brouilleur de vidéos pour YouTube — encodeur
+# VDOD — Video Decrypter On Demand
+
+**VDOD** signifie *Video Decrypter On Demand*. Le projet comprend deux parties : le brouilleur, une application de bureau décrite ici, qui brouille les vidéos avant leur mise en ligne sur YouTube, et l'extension de navigateur ([extension/](extension/README.md)), qui les débrouille à la demande pendant la lecture.
+
+Ce projet a été entièrement *vibe codé* avec [Claude](https://claude.ai) (Anthropic) : le code a été écrit par l'IA à partir de mes demandes en langage naturel.
+
+## Brouilleur de vidéos pour YouTube — encodeur
 
 Application de bureau qui brouille une vidéo selon le principe décrit dans [IDEE.md](IDEE.md) : image en 576 blocs mélangés, retournés et inversés, son en morceaux de 60 ms mélangés, et la clé dans un QR code ajouté au début. Le format exact, pour écrire l'extension, est dans [SPEC.md](SPEC.md).
 
