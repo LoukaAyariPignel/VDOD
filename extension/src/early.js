@@ -8,7 +8,8 @@
   const early = root.__brvEarly = { queue: [], handler: null, bytes: 0 };
   root.addEventListener("message", (e) => {
     const m = e.data && e.data.__brv;
-    if (!m || e.source !== root) return;
+    // Firefox : le « global » d'un script de contenu n'est pas la fenêtre (e.source, elle, l'est)
+    if (!m || (e.source !== root && e.source !== root.window)) return;
     if (early.handler) { early.handler(m); return; }
     early.queue.push(m);
     if (m.bytes) early.bytes += m.bytes.byteLength;
