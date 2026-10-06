@@ -184,7 +184,17 @@
       }
       const src = ctx.createMediaElementSource(this.video);
       src.connect(node);
-      node.connect(ctx.destination);
+      // Chrome capte le son de la vidéo avant son volume : le curseur du lecteur (et « muet »)
+      // n'agirait plus. On les réapplique en sortie (Firefox les applique déjà à la source).
+      const out = ctx.createGain();
+      if (!/firefox/i.test(root.navigator.userAgent)) {
+        const v = this.video;
+        const vol = () => out.gain.setTargetAtTime(v.muted ? 0 : v.volume, ctx.currentTime, 0.015);
+        out.gain.value = v.muted ? 0 : v.volume;
+        v.addEventListener("volumechange", vol);
+      }
+      node.connect(out);
+      out.connect(ctx.destination);
       this.node = node; this.port = port;
       this.video.preservesPitch = false; this.video.mozPreservesPitch = false;
       this.sendConfig();
